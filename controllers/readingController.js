@@ -3,10 +3,11 @@ import ReadingTest from "../models/ReadingTest.js";
 export const createTest = async (req, res) => {
   const test = await ReadingTest.create({
     title: req.body.title || "New Reading Test",
+    duration: req.body.duration ?? 60,
     parts: [
-      { id: "part1", name: "Part 1", passage: "", questions: [] },
-      { id: "part2", name: "Part 2", passage: "", questions: [] },
-      { id: "part3", name: "Part 3", passage: "", questions: [] },
+      { id: "part1", name: "Part 1", passage: "", questions: [],instructions: [] },
+      { id: "part2", name: "Part 2", passage: "", questions: [],instructions: [] },
+      { id: "part3", name: "Part 3", passage: "", questions: [],instructions: [] },
     ],
   });
   res.json(test);
@@ -36,7 +37,7 @@ export const deleteTest = async (req, res) => {
 
 export const updatePart = async (req, res) => {
   const { id, pid } = req.params;
-  const { name, passage, questions } = req.body;
+  const { name, passage, questions, instructions } = req.body;
 
   const test = await ReadingTest.findById(id);
   if (!test) return res.status(404).json({ error: "Test not found" });
@@ -46,6 +47,12 @@ export const updatePart = async (req, res) => {
 
   if (name !== undefined) test.parts[partIndex].name = name;
   if (passage !== undefined) test.parts[partIndex].passage = passage;
+
+  if (instructions !== undefined) {
+    test.parts[partIndex].instructions = instructions;
+    test.markModified(`parts.${partIndex}.instructions`);
+  }
+
   if (questions !== undefined) {
     test.parts[partIndex].questions = questions;
     test.markModified(`parts.${partIndex}.questions`);
@@ -106,12 +113,18 @@ export const checkAnswers = async (req, res) => {
   let score = 0;
 
   p.questions.forEach((q, i) => {
-    const user = answers[i];
+    const user = answers[q.id];
     if (!user) return;
 
     switch (q.type) {
       case "input":
-        if (q.answer?.trim().toLowerCase() === user.trim().toLowerCase()) score++;
+        if (
+          typeof user === "string" &&
+          typeof q.answer === "string" &&
+          q.answer.trim().toLowerCase() === user.trim().toLowerCase()
+        ) {
+          score++;
+        }
         break;
       case "choice":
         if (q.options.find(o => o.correct && o.text === user)) score++;
@@ -123,6 +136,19 @@ export const checkAnswers = async (req, res) => {
         q.correctMatches.forEach((correct, idx) => {
           if (user[idx]?.toUpperCase() === correct.toUpperCase()) score++;
         });
+        break;
+      case "summary":
+        if (Array.isArray(user) && Array.isArray(q.summaryAnswers)) {
+          q.summaryAnswers.forEach((correct, idx) => {
+            if (
+              typeof user[idx] === "string" &&
+              user[idx].trim().toLowerCase() ===
+              correct.trim().toLowerCase()
+            ) {
+              score++
+            }
+          })
+        }
         break;
     }
   });
